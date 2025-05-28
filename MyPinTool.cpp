@@ -162,7 +162,7 @@ VOID Fini(INT32 code, VOID* v)
     *out << "===============================================" << endl;
 
     // csv output
-    *out << "Instruction Address, Count, Readable Disasssembly" << endl;
+    *out << "Instruction Address,Count,Readable Disasssembly" << endl;
     for (auto it = instrMap.begin(); it != instrMap.end(); ++it) {
         ADDRINT addr = it->first;
         UINT64* count = it->second;
