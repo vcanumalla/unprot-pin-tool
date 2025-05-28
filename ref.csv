@@ -1,4 +1,4 @@
-Instruction Address, Count, Readable Disasssembly
+Instruction Address,Count,Readable Disasssembly
 0x403faa,1,"mov r14, rbx"
 0x402d14,63018986,"mov rax, rax"
 0x402cc4,86537943,"mov rbx, rax"
