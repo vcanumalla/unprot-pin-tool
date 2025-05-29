@@ -27,8 +27,8 @@ UINT64 threadCount = 0; //total number of threads, including main thread
 UINT64 staticUnprotCount = 0; // number of unprotected instructions
 UINT64 dynamicUnprotCount = 0;
 
-std::unordered_map<ADDRINT, UINT64*> instrMap;
-std::map<ADDRINT, std::string> disasMap;
+// reg mapping to whether it is unprotected during instrumentation (True if unprotected)
+std::map<std::string, bool> regUnprotMap;
 std::ostream* out = &cerr;
 
 /* ===================================================================== */
@@ -110,28 +110,13 @@ VOID Trace(TRACE trace, VOID* v)
  *                              PIN_AddThreadStartFunction function call
  */
 VOID Instruction(INS ins, VOID* v) {
-        UINT8 op;
-        PIN_SafeCopy(&op, (void*)INS_Address(ins), sizeof(UINT8));
-        if (op == 0x36) {
-            // instrumentation: add to the map
-            ADDRINT addr = INS_Address(ins);
-            UINT64* count = new UINT64(0);
-            if (instrMap.find(addr) == instrMap.end()) {
-                staticUnprotCount++;
-            }
-            instrMap[addr] = count;
-            std::string disas = INS_Disassemble(ins);
-            disasMap[addr] = disas;
-            // dynamically increase the count whenever the instruction is executed
-            INS_InsertCall(ins, IPOINT_BEFORE, 
-                (AFUNPTR)incCount, // args: UINT64* val
-                IARG_PTR, count,
-                IARG_END);
-            // increase the static count
-            // check if its the first time we see this instruction
-            // *out << "Unprotected instruction: " << std::hex << addr << " " << std::dec << INS_Disassemble(ins) << endl;
+    std::string op = INS_Mnemonic(ins);
+    // print instruction and its whole address for debugging
+    cerr << "Instruction Address: 0x" << std::hex << INS_Address(ins) << std::dec << " | ";
+    cerr << "Instruction: " << INS_Disassemble(ins) << endl;
 
-        }
+    // if the instruction is ss mov reg1 reg2, unprotect reg2 in environment
+
 }
 VOID ThreadStart(THREADID threadIndex, CONTEXT* ctxt, INT32 flags, VOID* v) { threadCount++; }
 
@@ -146,30 +131,7 @@ VOID Fini(INT32 code, VOID* v)
 {
     *out << "===============================================" << endl;
     *out << "MyPinTool analysis results: " << endl;
-    *out << "Number of instructions: " << insCount << endl;
-    *out << "Number of basic blocks: " << bblCount << endl;
-    *out << "Number of threads: " << threadCount << endl;
-    *out << "Number of unprotected instructions: " << staticUnprotCount << endl;
-    // *out << "Number of dynamic unprotected instructions: " << dynamicUnprotCount << endl;
-    UINT64 totalUnprotCount = 0;
-    // for (auto it = instrMap.begin(); it != instrMap.end(); ++it) {
-    //     ADDRINT addr = it->first;
-    //     UINT64* count = it->second;
-    //     // *out << "Unprotected instruction: 0x" << std::hex << addr << " (" << disasMap[addr] << ") " << "executed " << std::dec << *count << " times" << std::dec << endl;
-        
-        
-    // }
     *out << "===============================================" << endl;
-
-    // csv output
-    *out << "Instruction Address,Count,Readable Disasssembly" << endl;
-    for (auto it = instrMap.begin(); it != instrMap.end(); ++it) {
-        ADDRINT addr = it->first;
-        UINT64* count = it->second;
-        *out << std::hex << "0x" << addr << "," << std::dec << *count << ",\"" << disasMap[addr] << "\"" << endl;
-        totalUnprotCount += *count;
-        delete count; // free the allocated memory
-    }
 }
 
 /*!
