@@ -48,3 +48,29 @@ plot_histogram(df_sorted, "Instruction Execution Frequency (All Instructions)", 
 # Plot filtered instructions (Count > 10)
 df_filtered = df_sorted[df_sorted['Count'] > 100000].reset_index(drop=True)
 plot_histogram(df_filtered, "Instruction Execution Frequency (Count > 100000 Only)", "instruction_histogram_gt10_colored.png")
+
+total_instr = 1580543585689
+# percentage of instructions unprot makes up
+total_unprot = df_sorted['Count'].sum()
+percentage_unprot = (total_unprot / total_instr) * 100
+print(f"Total Instructions: {total_instr:,}")
+print(f"Total Unprotected Instructions: {total_unprot:,}")
+print(f"Percentage of Unprotected Instructions: {percentage_unprot:.2f}%")
+
+
+df_cdf = df_sorted.copy()
+
+# Compute cumulative count and normalize
+df_cdf['Cumulative'] = df_cdf['Count'].cumsum()
+df_cdf['CDF'] = df_cdf['Cumulative'] / df_cdf['Count'].sum()
+
+# Plot the CDF
+plt.figure(figsize=(12, 6))
+plt.plot(range(len(df_cdf)), df_cdf['CDF'], color='black', linewidth=2)
+plt.xlabel("Instruction Rank (sorted by execution count)")
+plt.ylabel("Cumulative Fraction of Executions")
+plt.title("CDF of Instruction Execution Counts")
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("instruction_cdf.png", dpi=300)
+plt.close()
