@@ -30,7 +30,6 @@ UINT64 dynamicUnprotCount = 0;
 // reg mapping to whether it is unprotected during instrumentation (True if unprotected)
 std::map<std::string, bool> regUnprotMap;
 std::ostream* out = &cerr;
-
 /* ===================================================================== */
 // Command line switches
 /* ===================================================================== */
@@ -111,11 +110,24 @@ VOID Trace(TRACE trace, VOID* v)
  */
 VOID Instruction(INS ins, VOID* v) {
     std::string op = INS_Mnemonic(ins);
-    // print instruction and its whole address for debugging
-    cerr << "Instruction Address: 0x" << std::hex << INS_Address(ins) << std::dec << " | ";
-    cerr << "Instruction: " << INS_Disassemble(ins) << endl;
 
-    // if the instruction is ss mov reg1 reg2, unprotect reg2 in environment
+    // ss mov rd rs
+    UINT8 is_ss;
+    PIN_SafeCopy(&is_ss, (void*)INS_Address(ins), sizeof(UINT8));
+    if (is_ss == 0x36) {
+        // 3 cases: ss move rd rs, ss mov rd [ptr] ss op rd [ptr]
+        // ss mov rd rs and ss mov rd [ptr] --> g[rd] <== 1
+        if (op == "MOV" && INS_OperandCount(ins) == 2 && INS_OperandIsReg(ins, 0)) {
+            REG reg = INS_OperandReg(ins, 0);
+            std::string regName = REG_StringShort(reg);
+            if (!INS_OperandIsReg(ins, 1)) {
+                cerr << "Second operand is not a register: " << INS_Disassemble(ins) << endl;
+            }
+            regUnprotMap[regName] = true; // mark as unprotected
+        }
+    }
+
+    // sub/add/mul... rd [ptr]
 
 }
 VOID ThreadStart(THREADID threadIndex, CONTEXT* ctxt, INT32 flags, VOID* v) { threadCount++; }
