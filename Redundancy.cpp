@@ -111,11 +111,12 @@ VOID Trace(TRACE trace, VOID* v)
 VOID Instruction(INS ins, VOID* v) {
     std::string op = INS_Mnemonic(ins);
 
-    // ss mov rd rs
+    // ss op y z
     UINT8 is_ss;
     PIN_SafeCopy(&is_ss, (void*)INS_Address(ins), sizeof(UINT8));
     if (is_ss == 0x36) {
         // 3 cases: ss move rd rs, ss mov rd [ptr] ss op rd [ptr]
+
         // ss mov rd rs and ss mov rd [ptr] --> g[rd] <== 1
         if (op == "MOV" && INS_OperandCount(ins) == 2 && INS_OperandIsReg(ins, 0)) {
             REG reg = INS_OperandReg(ins, 0);
@@ -124,6 +125,29 @@ VOID Instruction(INS ins, VOID* v) {
                 cerr << "Second operand is not a register: " << INS_Disassemble(ins) << endl;
             }
             regUnprotMap[regName] = true; // mark as unprotected
+        }
+
+        // ss op rd [ptr] --> g[rd] <== g[rd]
+        // no work since result stays the same as previous value
+    }
+    else {
+        if (op == "ADD" || op == "SUB" || op == "MUL" || op == "DIV" ||
+            op == "AND" || op == "OR" || op == "XOR") {
+            // op rd rs --> g[rd] <== g[rd] + g[rs]
+            if (INS_OperandCount(ins) == 2 && INS_OperandIsReg(ins, 0) && INS_OperandIsReg(ins, 1)) {
+                // collect the operand names
+                bool val1 = regUnprotMap.find(REG_StringShort(INS_OperandReg(ins, 0))) != regUnprotMap.end() &&
+                            regUnprotMap[REG_StringShort(INS_OperandReg(ins, 0))];
+                bool val2 = regUnprotMap.find(REG_StringShort(INS_OperandReg(ins, 1))) != regUnprotMap.end() &&
+                            regUnprotMap[REG_StringShort(INS_OperandReg(ins, 1))];
+                regUnprotMap[REG_StringShort(INS_OperandReg(ins, 0))] = val1 && val2; // mark as protected if either operand is protected.
+            }
+        }
+        // mov rd [ptr] -> g[rd] <== 0
+        else if (op == "MOV" && INS_OperandCount(ins) == 2 && INS_OperandIsReg(ins, 0) && !INS_OperandIsReg(ins, 1)) {
+            REG reg = INS_OperandReg(ins, 0);
+            std::string regName = REG_StringShort(reg);
+            regUnprotMap[regName] = false; // mark as protected
         }
     }
 
