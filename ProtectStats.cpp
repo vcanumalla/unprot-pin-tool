@@ -79,30 +79,22 @@ VOID incCount(UINT64* val)
 {
     (*val)++;
 }
-
+VOID checkRegInMap(const std::string& regName) {
+    // check if the register is in the map, if not add it
+    if (regUnprotMap.find(regName) == regUnprotMap.end()) {
+        regUnprotMap[regName] = false; // mark as protected
+    }
+}
 VOID tryChangeRegSS(UINT64* addr_count, bool* dest_prot, bool* src1) {
     *addr_count += !(*src1);
     *dest_prot = true;
 }
-// preprocess: compute dest_prot, src1, src2, is_ss
+// preprocess: compute dest_prot, src1, src2
 //  src1 && src2, if  dest_prot goes to false from true increment addr_count
 // update dest_prot if necessary
 // (UINT64* addr_count, bool* dest_prot, bool* src1, bool* src2, bool is_ss)
-VOID tryChangeRegStatus(UINT64* addr_count, bool* dest_prot, bool* src1, bool* src2, bool is_ss) {
-    // other ss wont route to here
-    if (is_ss) {
-        *dest_prot = true;
-
-    }
-    else {
-        // cerr << "in call\n";
-        // not ss
-        bool og = *dest_prot;
-        *dest_prot = *src1 && *src2;
-        // go from unprotected to protected
-        (*addr_count) += (og && !*dest_prot);
-        totalReprotects += (og && !*dest_prot);
-    }
+VOID tryChangeRegStatus(bool* dest_prot, bool* src1, bool* src2) {
+    *dest_prot = *src1 && *src2;
 }
 
 
@@ -170,24 +162,31 @@ VOID Instruction(INS ins, VOID* v) {
                 std::string regName = REG_StringShort(reg);
 
                 // make sure the register is in the map and addr_count is initialized
-                if (regUnprotMap.find(regName) == regUnprotMap.end()) {
-
-                    bool val = false;
-                    regUnprotMap[regName] = val; // mark as protected
-                }
+                checkRegInMap(regName);
                 if (insReprotectCount.find(INS_Address(ins)) == insReprotectCount.end()) {
                     insReprotectCount[INS_Address(ins)] = 0;
                     insReprotectDisasm[INS_Address(ins)] = INS_Disassemble(ins);
                 }
-                // cerr << "about to insert call\n";
-                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)tryChangeRegStatus,
-                    IARG_PTR, &insReprotectCount[INS_Address(ins)],
-                    IARG_PTR, &regUnprotMap[regName],
-                    IARG_PTR, &CONST_TRUE, // not used, doesnt matter
-                    IARG_PTR, &CONST_TRUE, // not used, doesnt matter
-                    IARG_BOOL, true, // ss
-                    IARG_END // end of args
-                );
+                if (INS_OperandIsReg(ins, 1)) {
+                    // cerr << "src1 is reg\n";
+                    REG src1Reg = INS_OperandReg(ins, 1);
+                    std::string src1RegName = REG_StringShort(src1Reg);
+                    // make sure the register is in the map
+                    checkRegInMap(src1RegName);
+                    // cerr << "src1 is reg, inserting call\n";
+                    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)tryChangeRegSS,
+                        IARG_PTR, &insReprotectCount[INS_Address(ins)],
+                        IARG_PTR, &regUnprotMap[regName],
+                        IARG_PTR, *&regUnprotMap[src1RegName], // src1 is the src reg
+                        IARG_END);
+                }
+                else {
+                    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)tryChangeRegSS,
+                        IARG_PTR, &insReprotectCount[INS_Address(ins)],
+                        IARG_PTR, &regUnprotMap[regName],
+                        IARG_PTR, &CONST_TRUE, // src1 is always true for ss
+                        IARG_END);
+                }
         }
     }
     else {
@@ -197,10 +196,7 @@ VOID Instruction(INS ins, VOID* v) {
         if (INS_OperandCount(ins) > 0 && INS_OperandIsReg(ins, 0) && INS_OperandWritten(ins, 0)) {
             // cerr << "actually going to do logic for instruction: " << INS_Disassemble(ins) << " at " << std::hex << INS_Address(ins) << std::dec << endl;
             // error checking
-            if (regUnprotMap.find(REG_StringShort(INS_OperandReg(ins, 0))) == regUnprotMap.end()) {
-                bool val = false;
-                regUnprotMap[REG_StringShort(INS_OperandReg(ins, 0))] = val; // mark as protected
-            }
+            checkRegInMap(REG_StringShort(INS_OperandReg(ins, 0)));
             if (insReprotectCount.find(INS_Address(ins)) == insReprotectCount.end()) {
                 insReprotectCount[INS_Address(ins)] = 0;
                 insReprotectDisasm[INS_Address(ins)] = INS_Disassemble(ins);
@@ -218,14 +214,8 @@ VOID Instruction(INS ins, VOID* v) {
                 else if (INS_OperandIsReg(ins, 1)) {
                     REG reg = INS_OperandReg(ins, 1);
                     std::string regName = REG_StringShort(reg);
-                    if (regUnprotMap.find(regName) != regUnprotMap.end()) {
-                        src1 = &regUnprotMap[regName];
-                    }
-                    // not in map, add it
-                    else {
-                        regUnprotMap[regName] = false;
-                        src1 = &regUnprotMap[regName];
-                    }
+                    checkRegInMap(regName);
+                    src1 = &regUnprotMap[regName];
                 }
                 // constant that is always unprot (leaked through opcode)
                 else {
@@ -240,14 +230,8 @@ VOID Instruction(INS ins, VOID* v) {
                 else if (INS_OperandIsReg(ins, 2)) {
                     REG reg = INS_OperandReg(ins, 2);
                     std::string regName = REG_StringShort(reg);
-                    if (regUnprotMap.find(regName) != regUnprotMap.end()) {
-                        src2 = &regUnprotMap[regName];
-                    }
-                    // not in map, add it
-                    else {
-                        regUnprotMap[regName] = false;
-                        src2 = &regUnprotMap[regName];
-                    }
+                    checkRegInMap(regName);
+                    src2 = &regUnprotMap[regName];
                 }
                 else {
                     src2 = &CONST_TRUE;
@@ -256,17 +240,12 @@ VOID Instruction(INS ins, VOID* v) {
             else if (INS_OperandCount(ins) == 1) {
                 // no src2, just use CONST_TRUE
             }
-            else {
-                cerr << "Unhandled instruction with more than 3 operands: " << INS_Disassemble(ins) << " at " << std::hex << INS_Address(ins) << std::dec << endl;
-                cerr << "Info: " << INS_OperandCount(ins) << std::endl;
-            }
             // cerr << "about to insert call for instruction: " << INS_Disassemble(ins) << " at " << std::hex << INS_Address(ins) << std::dec << endl;
             INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)tryChangeRegStatus,
-                IARG_PTR, &insReprotectCount[INS_Address(ins)],
                 IARG_PTR, dest_prot,
                 IARG_PTR, src1,
                 IARG_PTR, src2,
-                IARG_BOOL, false, IARG_END // not ss
+                IARG_END // not ss
             );
         }
         // not a write, can pass
